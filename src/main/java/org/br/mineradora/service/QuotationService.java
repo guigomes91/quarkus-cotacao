@@ -5,19 +5,21 @@ import jakarta.inject.Inject;
 import org.br.mineradora.client.CurrencyPriceClient;
 import org.br.mineradora.dto.CurrencyPriceDTO;
 import org.br.mineradora.dto.QuotationDTO;
-import org.br.mineradora.dto.USDBRL;
 import org.br.mineradora.entity.QuotationEntity;
 import org.br.mineradora.message.KafkaEvents;
 import org.br.mineradora.repository.QuotationRepository;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.util.Date;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 @ApplicationScoped
 public class QuotationService {
+
+    private final Logger LOG = LoggerFactory.getLogger(QuotationService.class);
 
     @Inject
     @RestClient
@@ -32,15 +34,20 @@ public class QuotationService {
     public void getCurrencyPrice() {
         var currencyPriceInfo = currencyPriceClient.getPriceByPair("USD-BRL");
 
-        if (updateCurrentInfoPrice(currencyPriceInfo)) {
-            kafkaEvents.sendNewKafkaEvent(
-                    QuotationDTO
-                            .builder()
-                            .currencyPrice(new BigDecimal(currencyPriceInfo.getUSDBRL().getBid()))
-                            .date(new Date())
-                            .build()
-            );
+        if (currencyPriceInfo != null && currencyPriceInfo.getUSDBRL() != null) {
+            if (updateCurrentInfoPrice(currencyPriceInfo)) {
+                kafkaEvents.sendNewKafkaEvent(
+                        QuotationDTO
+                                .builder()
+                                .currencyPrice(new BigDecimal(currencyPriceInfo.getUSDBRL().getBid()))
+                                .date(new Date())
+                                .build()
+                );
+            }
+        } else {
+            LOG.error("CurrencyPriceDTO ou USDBRL esta null.");
         }
+
     }
 
     private boolean updateCurrentInfoPrice(CurrencyPriceDTO currencyPriceDTO) {
@@ -53,7 +60,7 @@ public class QuotationService {
             saveQuotation(currencyPriceDTO);
             updatePrice = true;
         } else {
-            var lastDollarPrice = quotationEntityList.getLast();
+            var lastDollarPrice = quotationEntityList.get(quotationEntityList.size() - 1);
 
             if (currentPrice.floatValue() > lastDollarPrice.getCurrencyPrice().floatValue()) {
                 updatePrice = true;
